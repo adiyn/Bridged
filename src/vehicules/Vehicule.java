@@ -1,13 +1,12 @@
-package threads.Sync.projet.vehicules;
+package vehicules;
 
-import threads.Sync.projet.PontMonitor;
+import pont.PontMonitor;
 
 public class Vehicule extends Thread {
-    private final PontMonitor monitor;
-    private final PontMonitor.TypeVehicule type;
-    private final boolean sensGD;
+    private final PontMonitor pont;
+    private final TypeVehicule type;
+    private final boolean sens; //true = normal (gauche vers droite), false = reverse (droite vers gauche)
     private final String nom;
-    private final int segments;
 
     /**
      *
@@ -17,29 +16,30 @@ public class Vehicule extends Thread {
      * @param nom           ex : clio-1
      * @param nbSegments    longueur du pont
      */
-    public Vehicule(PontMonitor monitor, PontMonitor.TypeVehicule type, boolean sensGD, String nom, int nbSegments) {
-        this.monitor = monitor;
+    public Vehicule(PontMonitor pont, TypeVehicule type, boolean sens, String nom) {
+    	if (type == TypeVehicule.RIEN) {
+    		throw new IllegalArgumentException("Un véhicule ne peut avoir le type RIEN");
+    	}
+        this.pont = pont;
         this.type = type;
-        this.sensGD = sensGD;
+        this.sens = sens;
         this.nom = nom;
-        this.segments = nbSegments;
     }
 
     @Override
     public void run() {
         try {
-            monitor.entrerPont(type, sensGD, nom);
-            int positionTete = type.taille - 1;
+            pont.entrerPont(type, sens, nom);
+    
+            int position = 0;
+            int taillePont = pont.getTaille();
 
-
-            while (positionTete < segments - 1) {
-                Thread.sleep(type == PontMonitor.TypeVehicule.PRIORITAIRE ? 200 : 500);
-                monitor.avancer(type, sensGD, positionTete);
-                positionTete++;
+            while (position <= taillePont - 1) {
+                Thread.sleep(type == TypeVehicule.PRIO ? 200 : 500);
+                
+                pont.avancer(type, sens, position);
+                position += type.taille;
             }
-
-            Thread.sleep(300);
-            monitor.sortirPont(type, sensGD, nom);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

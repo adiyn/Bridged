@@ -1,3 +1,4 @@
+#trucs pour MonsterDrinkerKing
 .gradle
 .idea/
 .intellijPlatform/
@@ -8,6 +9,7 @@ src/main/gen
 src/main/resources/templates.list
 src/main/resources/gitignore/*
 
+#trucs pour Masyunya
 .classpath
 .project
 src/.*
