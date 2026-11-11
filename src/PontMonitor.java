@@ -37,11 +37,19 @@ public class PontMonitor {
 
     private EtatPont etat = EtatPont.FERME;
     private int vehiculesSurPont = 0;
+
+    // gestion des convois
     private int convoisEnAttenteGD = 0;
     private int convoisEnAttenteDG = 0;
-    private boolean vehiculePrioritaireSurPont = false;
+    private int convoisSurPontGD = 0;
+    private int convoisSurPontDG = 0;
 
-    // file d'attente FIFO pour les bateaux
+    // gestion des véhicules prioritaires et bande d'urgence
+    private int prioritairesEnAttente = 0;
+    private int prioritairesSurPont = 0;
+    private boolean bandeUrgenceActive = false;
+
+    // file d'attente fifo pour les bateaux
     private final Queue<Long> fileBateaux = new LinkedList<>();
     private long dernierBateauTraverse = -1;
 
@@ -64,6 +72,7 @@ public class PontMonitor {
             voieGD[i] = true;
             voieDG[i] = true;
         }
+        this.tempsDerniereFermeture = System.currentTimeMillis();
     }
 
     /**
@@ -75,34 +84,34 @@ public class PontMonitor {
      * @throws InterruptedException si le thread en attente d'accès est interrompu
      */
     public synchronized void entrerPont(TypeVehicule type, boolean sensGD, String nom) throws InterruptedException {
+        // enregistrement en file d'attente
         if (type == TypeVehicule.CONVOI) {
             if (sensGD) convoisEnAttenteGD++; else convoisEnAttenteDG++;
+        } else if (type == TypeVehicule.PRIORITAIRE) {
+            prioritairesEnAttente++;
         }
 
-        while (true) {
-            boolean pontAccessible = (etat == EtatPont.FERME);
-            boolean voieAdverseBloquee = sensGD ? (convoisEnAttenteDG > 0) : (convoisEnAttenteGD > 0);
-            boolean prioritaireBloquant = vehiculePrioritaireSurPont && (type != TypeVehicule.PRIORITAIRE);
-
-            boolean convoiPeutEntrer = true; // on commence avec Gauche -> Droite
+        try {
+            while (!peutEntrer(type, sensGD)) {
+                wait();
+            }
+        } finally {
+            // décrémentation propre même en cas d'interruption
             if (type == TypeVehicule.CONVOI) {
-                convoiPeutEntrer = sensGD ? (compterVehicules(voieDG) == 0) : (compterVehicules(voieGD) == 0);
+                if (sensGD) convoisEnAttenteGD--; else convoisEnAttenteDG--;
+            } else if (type == TypeVehicule.PRIORITAIRE) {
+                prioritairesEnAttente--;
             }
-
-            boolean segmentsDispos = verifierSegmentsLibres(sensGD, 0, type.taille);
-
-            if (pontAccessible && !voieAdverseBloquee && !prioritaireBloquant && convoiPeutEntrer && segmentsDispos) {
-                break;
-            }
-            wait();
         }
 
+        // engagement effectif sur le pont
         if (type == TypeVehicule.CONVOI) {
-            if (sensGD) convoisEnAttenteGD--; else convoisEnAttenteDG--;
+            if (sensGD) convoisSurPontGD++; else convoisSurPontDG++;
         }
 
         if (type == TypeVehicule.PRIORITAIRE) {
-            vehiculePrioritaireSurPont = true;
+            prioritairesSurPont++;
+            bandeUrgenceActive = true;
         }
 
         reserverSegments(sensGD, 0, type.taille, false);
@@ -112,7 +121,63 @@ public class PontMonitor {
     }
 
     /**
-     * Fait progresser le véhicule d'un cran en réservant la nouvelle position de tête et en libérant la queue (snake ahh)
+     * vérifie si un véhicule remplit toutes les conditions pour s'engager
+     */
+    private boolean peutEntrer(TypeVehicule type, boolean sensGD) {
+        // le pont doit être fermé, lol
+        if (etat != EtatPont.FERME) {
+            return false;
+        }
+
+        // priorité absolue aux véhicules d'urgence
+        boolean prioritaireEnCours = prioritairesEnAttente > 0 || prioritairesSurPont > 0;
+        if (type != TypeVehicule.PRIORITAIRE && prioritaireEnCours) {
+            return false;
+        }
+
+        // voie adverse bloquée par un convoi ?
+        if (voieBloqueeParConvoi(type, sensGD)) {
+            return false;
+        }
+
+        // un convoi attend que toute la voie d'en face soit vide
+        if (type == TypeVehicule.CONVOI) {
+            boolean[] voieFace = sensGD ? voieDG : voieGD;
+            if (compterVehicules(voieFace) > 0) {
+                return false;
+            }
+        }
+
+        // vérifie que les segments d'entrée nécessaires sont libres
+        return verifierSegmentsLibres(sensGD, 0, type.taille);
+    }
+
+    /**
+     * vérifie si un convoi arrivant ou présent en face interdit l'accès
+     */
+    private boolean voieBloqueeParConvoi(TypeVehicule type, boolean sensGD) {
+        int convoisSurPontEnFace   = sensGD ? convoisSurPontDG   : convoisSurPontGD;
+        int convoisEnAttenteEnFace = sensGD ? convoisEnAttenteDG : convoisEnAttenteGD;
+
+        // si un convoi roule déjà en face, interdiction d'entrer
+        if (convoisSurPontEnFace > 0) {
+            return true;
+        }
+
+        // si un convoi attend en face
+        if (convoisEnAttenteEnFace > 0) {
+            // arbitrage : gauche -> droite a la priorité si deux convois attendent
+            if (type == TypeVehicule.CONVOI && sensGD) {
+                return false; // on laisse passer gauche -> droite
+            }
+            return true; // les autres attendent
+        }
+
+        return false;
+    }
+
+    /**
+     * Fait progresser le véhicule d'un cran en réservant la nouvelle position de tête et en libérant la queue (snake)
      *
      * @param type                  type du véhicule
      * @param sensGD                true pour Gauche -> Droite, false pour Droite -> Gauche
@@ -120,15 +185,16 @@ public class PontMonitor {
      * @throws InterruptedException si le thread en attente du segment suivant est interrompu
      */
     public synchronized void avancer(TypeVehicule type, boolean sensGD, int positionTeteActuelle) throws InterruptedException {
+        // les véhicules ordinaires s'arrêtent sur la bande d'urgence pendant le passage d'une urgence
+        if (type != TypeVehicule.PRIORITAIRE) {
+            while (bandeUrgenceActive) {
+                wait();
+            }
+        }
+
         int nouvelleTete = positionTeteActuelle + 1;
 
-        while (true) {
-            boolean prioritaireEnCours = vehiculePrioritaireSurPont && (type != TypeVehicule.PRIORITAIRE);
-            boolean segmentSuivantLibre = isSegmentLibre(sensGD, nouvelleTete);
-
-            if (!prioritaireEnCours && segmentSuivantLibre) {
-                break;
-            }
+        while (nouvelleTete < segments && !isSegmentLibre(sensGD, nouvelleTete)) {
             wait();
         }
 
@@ -155,9 +221,17 @@ public class PontMonitor {
         }
 
         vehiculesSurPont--;
+
+        if (type == TypeVehicule.CONVOI) {
+            if (sensGD) convoisSurPontGD--; else convoisSurPontDG--;
+        }
+
         if (type == TypeVehicule.PRIORITAIRE) {
-            vehiculePrioritaireSurPont = false;
-            System.out.println("le véhicule prioritaire est sorti");
+            prioritairesSurPont--;
+            if (prioritairesSurPont == 0) {
+                bandeUrgenceActive = false;
+                System.out.println("le véhicule prioritaire est sorti");
+            }
         }
 
         System.out.println("> " + nom + " a quitté le pont.");
@@ -181,42 +255,53 @@ public class PontMonitor {
      * @throws InterruptedException si l'attente d'évacuation ou de franchissement est interrompue
      */
     public synchronized void verifierEtDeclencherOuverture() throws InterruptedException {
-        if (etat == EtatPont.FERME && !fileBateaux.isEmpty()) {
-            long tempsEcoule = System.currentTimeMillis() - tempsDerniereFermeture;
-            if (tempsEcoule >= DELAI_MIN_REOUVERTURE_MS) {
-                System.out.println("\nOUVERTURE DU PONT : BARRAGES BAISSÉS");
-                etat = EtatPont.OUVERTURE;
-                notifyAll();
+        while (etat != EtatPont.FERME || fileBateaux.isEmpty()) {
+            wait();
+        }
 
-                while (vehiculesSurPont > 0) {
-                    wait();
-                }
-
-                etat = EtatPont.OUVERT;
-                System.out.println("PONT OUVERT. NAVIRES, AVANCEZ !\n");
-                notifyAll();
-
-                while (!fileBateaux.isEmpty()) {
-                    long bateauActuel = fileBateaux.poll();
-                    dernierBateauTraverse = bateauActuel;
-                    System.out.println("Bateau #" + bateauActuel + " avance sous le pont.");
-                    notifyAll();
-
-                    while (dernierBateauTraverse == bateauActuel) {
-                        wait();
-                    }
-                }
-
-                etat = EtatPont.FERMETURE;
-                System.out.println("\nFERMETURE DU PONT EN COURS...");
-                notifyAll();
-
-                etat = EtatPont.FERME;
-                tempsDerniereFermeture = System.currentTimeMillis();
-                System.out.println("PONT FERMÉ : REPRISE DE LA CIRCULATION\n");
-                notifyAll();
+        long tempsEcoule = System.currentTimeMillis() - tempsDerniereFermeture;
+        if (tempsEcoule < DELAI_MIN_REOUVERTURE_MS) {
+            long attenteRestante = DELAI_MIN_REOUVERTURE_MS - tempsEcoule;
+            wait(attenteRestante);
+            if (etat != EtatPont.FERME || fileBateaux.isEmpty()) {
+                return;
             }
         }
+
+        System.out.println("\nOUVERTURE DU PONT : BARRAGES BAISSÉS");
+        etat = EtatPont.OUVERTURE;
+        notifyAll();
+
+        while (vehiculesSurPont > 0) {
+            wait();
+        }
+
+        etat = EtatPont.OUVERT;
+        System.out.println("PONT OUVERT. NAVIRES, AVANCEZ !\n");
+        notifyAll();
+
+        while (!fileBateaux.isEmpty()) {
+            long bateauActuel = fileBateaux.poll();
+            dernierBateauTraverse = bateauActuel;
+            System.out.println("Bateau #" + bateauActuel + " avance sous le pont.");
+            notifyAll();
+
+            while (dernierBateauTraverse == bateauActuel) {
+                wait();
+            }
+        }
+
+        etat = EtatPont.FERMETURE;
+        System.out.println("\nFERMETURE DU PONT EN COURS...");
+        notifyAll();
+
+        // temporisation mécanique de fermeture
+        Thread.sleep(500);
+
+        etat = EtatPont.FERME;
+        tempsDerniereFermeture = System.currentTimeMillis();
+        System.out.println("PONT FERMÉ : REPRISE DE LA CIRCULATION\n");
+        notifyAll();
     }
 
     /**
@@ -227,7 +312,7 @@ public class PontMonitor {
     public synchronized void signalerBateauPasse(long bateauId) {
         if (dernierBateauTraverse == bateauId) {
             dernierBateauTraverse = -1;
-            System.out.println("Bateau #" + bateauId + " a fini de traversre.");
+            System.out.println("Bateau #" + bateauId + " a fini de traverser.");
             notifyAll();
         }
     }
@@ -235,7 +320,7 @@ public class PontMonitor {
     /**
      * Met un bateau en attente tant que le pont n'est pas ouvert ou que son tour n'est pas venu
      *
-     * @param bateauId identifiant du bateao en attente
+     * @param bateauId identifiant du bateau en attente
      * @throws InterruptedException si l'attente est interrompue
      */
     public synchronized void attendreAutorisationBateau(long bateauId) throws InterruptedException {
