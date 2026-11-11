@@ -21,14 +21,14 @@ public class PontMonitor {
 
 	//trucs de pont
 	private final int segments;
-	private final boolean[] voieGD; // true = libre
-	private final boolean[] voieDG; // true = libre
+	private final boolean[] voieNormale; // true = libre
+	private final boolean[] voieReverse; // true = libre
 	private int vehiculesSurNormal = 0;
 	private int vehiculesSurReverse = 0;
 	private EtatPont etat = EtatPont.FERME;
 
-	private boolean entreeGaucheOuverte = true;
-	private boolean entreeDroiteOuverte = true;
+	private boolean entreeNormaleOuverte = true;
+	private boolean entreeReverseOuverte = true;
 
 	//trucs de gestion maritime
 	private final Queue<Long> fileBateaux = new LinkedList<>();
@@ -47,12 +47,12 @@ public class PontMonitor {
 	public PontMonitor(int nbSegments, long delaiReouvertureMs) {
 		this.segments = nbSegments;
 
-		this.voieGD = new boolean[segments];
-		this.voieDG = new boolean[segments];
+		this.voieNormale = new boolean[segments];
+		this.voieReverse = new boolean[segments];
 
 		for (int i = 0; i < segments; i++) {
-			voieGD[i] = true;
-			voieDG[i] = true;
+			voieNormale[i] = true;
+			voieReverse[i] = true;
 		}
 
 		this.DELAI_MIN_REOUVERTURE_MS = delaiReouvertureMs;
@@ -267,7 +267,7 @@ public class PontMonitor {
 	 * @return true si tous les segments de la plage sont libres, false sinon
 	 */
 	private boolean verifierSegmentsLibres(boolean sensGD, int debut, int taille) {
-		boolean[] voie = sensGD ? voieGD : voieDG;
+		boolean[] voie = sensGD ? voieNormale : voieReverse;
 
 		//on s'arrête de boucler en arrivant à la fin du tableau ou quand on a assez réservé
 		int stoppingPoint = debut + taille < segments ? debut + taille : segments;
@@ -287,7 +287,7 @@ public class PontMonitor {
 	 * @param libre  true pour marquer comme libre, false pour occuper
 	 */
 	private void reserverSegments(boolean sensGD, int debut, int taille, boolean libre) {
-		boolean[] voie = sensGD ? voieGD : voieDG;
+		boolean[] voie = sensGD ? voieNormale : voieReverse;
 
 		//on s'arrête de boucler en arrivant à la fin du tableau ou quand on a assez réservé
 		int stoppingPoint = debut + taille < segments ? debut + taille : segments;
