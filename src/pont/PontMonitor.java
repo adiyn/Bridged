@@ -21,13 +21,13 @@ public class PontMonitor {
 
 	//trucs de pont
 	private final int segments;
-	private final boolean[] voieNormale; // true = libre
-	private final boolean[] voieReverse; // true = libre
+	private final TypeVehicule[] voieNormale; // RIEN = libre, autrement c'est pris
+	private final TypeVehicule[] voieReverse;
 	private int vehiculesSurNormal = 0;
 	private int vehiculesSurReverse = 0;
 	private EtatPont etat = EtatPont.FERME;
 
-	private boolean entreeNormaleOuverte = true;
+	private boolean entreeNormaleOuverte = true; //pour les convois
 	private boolean entreeReverseOuverte = true;
 
 	//trucs de gestion maritime
@@ -38,6 +38,7 @@ public class PontMonitor {
 	private long tempsDerniereFermeture = 0;
 	private final long DELAI_MIN_REOUVERTURE_MS;
 
+	private AfficheurPont afficheur;
 	/**
 	 * Initialise le moniteur
 	 *
@@ -47,18 +48,22 @@ public class PontMonitor {
 	public PontMonitor(int nbSegments, long delaiReouvertureMs) {
 		this.segments = nbSegments;
 
-		this.voieNormale = new boolean[segments];
-		this.voieReverse = new boolean[segments];
+		this.voieNormale = new TypeVehicule[segments];
+		this.voieReverse = new TypeVehicule[segments];
 
 		for (int i = 0; i < segments; i++) {
-			voieNormale[i] = true;
-			voieReverse[i] = true;
+			voieNormale[i] = TypeVehicule.RIEN;
+			voieReverse[i] = TypeVehicule.RIEN;
 		}
 
 		this.DELAI_MIN_REOUVERTURE_MS = delaiReouvertureMs;
 		this.tempsDerniereFermeture = System.currentTimeMillis();
 		
 		System.out.println("pont créé.");
+		
+		this.afficheur = new AfficheurPont(nbSegments);
+		afficheur.draw(voieNormale, voieReverse);
+		
 	}
 
 
@@ -78,15 +83,15 @@ public class PontMonitor {
 			wait();
 		}
 
-		reserverSegments(sens, 0, type.taille, false);
+		reserverSegments(sens, 0, type.taille, type);
 
 		if (sens) {
 			vehiculesSurNormal++;
 		} else {
 			vehiculesSurReverse++;
 		}
-
-		//affichage?
+		
+		afficheur.draw(voieNormale, voieReverse);
 
 		notifyAll();
 	}
@@ -128,10 +133,12 @@ public class PontMonitor {
 		}
 		//c'est bon
 
-		reserverSegments(sensGD, nouvellePos, type.taille, false); //on réserve les segments suivants
+		reserverSegments(sensGD, nouvellePos, type.taille, type); //on réserve les segments suivants
 
-		reserverSegments(sensGD, positionActuelle, type.taille, true); //on libère ceux où on est
+		reserverSegments(sensGD, positionActuelle, type.taille, TypeVehicule.RIEN); //on libère ceux où on est
 
+		afficheur.draw(voieNormale, voieReverse);
+		
 		notifyAll();
 	}
 
@@ -267,13 +274,13 @@ public class PontMonitor {
 	 * @return true si tous les segments de la plage sont libres, false sinon
 	 */
 	private boolean verifierSegmentsLibres(boolean sensGD, int debut, int taille) {
-		boolean[] voie = sensGD ? voieNormale : voieReverse;
+		TypeVehicule[] voie = sensGD ? voieNormale : voieReverse;
 
 		//on s'arrête de boucler en arrivant à la fin du tableau ou quand on a assez réservé
 		int stoppingPoint = debut + taille < segments ? debut + taille : segments;
 
 		for (int i = debut; i < stoppingPoint; i++) {
-			if (!voie[i]) return false;
+			if (voie[i] != TypeVehicule.RIEN) return false;
 		}
 		return true;
 	}
@@ -284,16 +291,16 @@ public class PontMonitor {
 	 * @param sensGD voie concernée (true pour Gauche -> Droite, false pour Droite -> Gauche)
 	 * @param debut  premier segment
 	 * @param taille nombre de segments contigus à mettre à jour
-	 * @param libre  true pour marquer comme libre, false pour occuper
+	 * @param nouvelleVal TypeVehicule.RIEN pour marquer comme libre, le type de véhicule pour occuper
 	 */
-	private void reserverSegments(boolean sensGD, int debut, int taille, boolean libre) {
-		boolean[] voie = sensGD ? voieNormale : voieReverse;
+	private void reserverSegments(boolean sensGD, int debut, int taille, TypeVehicule nouvelleVal) {
+		TypeVehicule[] voie = sensGD ? voieNormale : voieReverse;
 
 		//on s'arrête de boucler en arrivant à la fin du tableau ou quand on a assez réservé
 		int stoppingPoint = debut + taille < segments ? debut + taille : segments;
 
 		for (int i = debut; i < stoppingPoint; i++) {
-			voie[i] = libre;
+			voie[i] = nouvelleVal;
 		}
 	}
 

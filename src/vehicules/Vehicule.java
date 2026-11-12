@@ -1,5 +1,7 @@
 package vehicules;
 
+import java.awt.SystemColor;
+
 import pont.PontMonitor;
 
 public class Vehicule extends Thread {
@@ -29,16 +31,19 @@ public class Vehicule extends Thread {
     @Override
     public void run() {
         try {
+        	
             pont.entrerPont(type, sens, nom);
     
+            
             int position = 0;
             int taillePont = pont.getTaille();
 
             while (position <= taillePont - 1) {
                 Thread.sleep(type == TypeVehicule.PRIO ? 200 : 500);
-                
+              
                 pont.avancer(type, sens, position);
                 position += type.taille;
+                //System.out.println(nom + " a avancé");
             }
 
         } catch (InterruptedException e) {
