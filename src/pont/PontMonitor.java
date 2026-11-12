@@ -1,7 +1,11 @@
 package pont;
 
+import java.time.LocalTime;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.Timer;
+import java.util.TimerTask;
+
 import vehicules.*;
 
 /**
@@ -32,7 +36,8 @@ public class PontMonitor {
 
 	//trucs de gestion maritime
 	private final Queue<Long> fileBateaux = new LinkedList<>();
-	private long dernierBateauTraverse = -1;
+	private boolean traverseeBateauEnCours = false;
+	private boolean demandeDePassage = false;
 
 	// timers pour le pont
 	private long tempsDerniereFermeture = 0;
@@ -105,6 +110,12 @@ public class PontMonitor {
 		if (etat != EtatPont.FERME) {
 			return false;
 		}
+		
+		if (sensGD && !this.entreeNormaleOuverte) {
+			return false;
+		} else if (!sensGD && !this.entreeReverseOuverte) {
+			return false;
+		}
 
 		// vérifie que les segments d'entrée nécessaires sont libres
 		return verifierSegmentsLibres(sensGD, 0, type.taille);
@@ -173,97 +184,7 @@ public class PontMonitor {
 		 */
 		notifyAll();
 	}
-
-	/**
-	 * Enregistre la demande d'un bateau dans la file
-	 *
-	 * @param bateauId identifiant unique bateau
-	 */
-	public synchronized void demanderPassageBateau(long bateauId) {
-		fileBateaux.add(bateauId);
-		System.out.println("bateau #" + bateauId + " enregistré dans la file d'attente.");
-		notifyAll();
-	}
-
-	/**
-	 * Gère l'ouverture du pont, la sortie des véhicules et le passage des bateaux
-	 *
-	 * @throws InterruptedException si l'attente d'évacuation ou de franchissement est interrompue
-	 */
-	public synchronized void verifierEtDeclencherOuverture() throws InterruptedException {
-		while (etat != EtatPont.FERME || fileBateaux.isEmpty()) {
-			wait();
-		}
-
-		long tempsEcoule = System.currentTimeMillis() - tempsDerniereFermeture;
-		if (tempsEcoule < DELAI_MIN_REOUVERTURE_MS) {
-			long attenteRestante = DELAI_MIN_REOUVERTURE_MS - tempsEcoule;
-			wait(attenteRestante);
-			if (etat != EtatPont.FERME || fileBateaux.isEmpty()) {
-				return;
-			}
-		}
-
-		System.out.println("\nOUVERTURE DU PONT : BARRAGES BAISSÉS");
-		etat = EtatPont.OUVERTURE;
-		notifyAll();
-
-		while (vehiculesSurNormal+vehiculesSurReverse > 0) {
-			wait();
-		}
-
-		etat = EtatPont.OUVERT;
-		System.out.println("PONT OUVERT. NAVIRES, AVANCEZ !\n");
-		notifyAll();
-
-		while (!fileBateaux.isEmpty()) {
-			long bateauActuel = fileBateaux.poll();
-			dernierBateauTraverse = bateauActuel;
-			System.out.println("Bateau #" + bateauActuel + " avance sous le pont.");
-			notifyAll();
-
-			while (dernierBateauTraverse == bateauActuel) {
-				wait();
-			}
-		}
-
-		etat = EtatPont.FERMETURE;
-		System.out.println("\nFERMETURE DU PONT EN COURS...");
-		notifyAll();
-
-		// temporisation mécanique de fermeture
-		Thread.sleep(500);
-
-		etat = EtatPont.FERME;
-		tempsDerniereFermeture = System.currentTimeMillis();
-		System.out.println("PONT FERMÉ : REPRISE DE LA CIRCULATION\n");
-		notifyAll();
-	}
-
-	/**
-	 * Notifie qu'un bateau est passé
-	 *
-	 * @param bateauId identifiant du bateau qui est passé
-	 */
-	public synchronized void signalerBateauPasse(long bateauId) {
-		if (dernierBateauTraverse == bateauId) {
-			dernierBateauTraverse = -1;
-			System.out.println("Bateau #" + bateauId + " a fini de traverser.");
-			notifyAll();
-		}
-	}
-
-	/**
-	 * Met un bateau en attente tant que le pont n'est pas ouvert ou que son tour n'est pas venu
-	 *
-	 * @param bateauId identifiant du bateau en attente
-	 * @throws InterruptedException si l'attente est interrompue
-	 */
-	public synchronized void attendreAutorisationBateau(long bateauId) throws InterruptedException {
-		while ((etat != EtatPont.OUVERT) || (dernierBateauTraverse != bateauId)) {
-			wait();
-		}
-	}
+	
 
 	/**
 	 * Contrôle la disponibilité simultanée d'une série de segments consécutifs.
@@ -304,7 +225,113 @@ public class PontMonitor {
 		}
 	}
 
+	/**
+	 * Rretourne la taille du pont, son nombre de segments.
+	 *
+	 */
 	public int getTaille() {
 		return segments;
 	}
+	
+
+	/**
+	 * Range un bateau dans la file
+	 *
+	 * @param bateauId identifiant unique bateau
+	 */
+	public synchronized void seRanger(long bateauId) {
+		fileBateaux.add(bateauId);
+		//System.out.println("bateau #" + bateauId + " enregistré dans la file d'attente.");
+		//notifyAll();
+	}
+
+	/**
+	 * Met un bateau en attente tant que le pont n'est pas ouvert ou que son tour n'est pas venu
+	 *
+	 * @param bateauId identifiant du bateau en attente
+	 * @throws InterruptedException si l'attente est interrompue
+	 */
+	public synchronized void demanderPassageBateaux(long bateauId) throws InterruptedException {
+		if (!this.demandeDePassage) {
+			this.demandeDePassage = true;
+			
+			ouvrirPont();
+		}
+		
+		while (etat != EtatPont.OUVERT) {
+			wait();
+		}
+		
+		while (traverseeBateauEnCours) {
+			wait();
+		}
+		
+		traverseeBateauEnCours = true;
+		
+		fileBateaux.poll();
+		
+		//affichage prenant du temps
+		System.out.println("Bateau " + bateauId + " traverse....");
+		System.out.flush();
+		
+		Thread.sleep(5000);
+		System.out.println("Bateau " + bateauId + " a traversé!");
+		
+		traverseeBateauEnCours = false;
+		
+		signalerBateauPasse();
+		
+	}
+	
+	/**
+	 * Gère l'ouverture du pont, et le passage des bateaux
+	 *
+	 * @throws InterruptedException si l'attente d'évacuation ou de franchissement est interrompue
+	 */
+	private synchronized void ouvrirPont() throws InterruptedException {
+		while (LocalTime.now().toSecondOfDay() < this.tempsDerniereFermeture + 60) {
+			wait();
+		}
+		
+		this.entreeNormaleOuverte = false;
+		this.entreeReverseOuverte = false;
+		
+		while (this.vehiculesSurNormal + this.vehiculesSurReverse != 0) {
+			wait();
+		}
+		
+		this.etat = EtatPont.OUVERTURE;
+		
+		//System.out.println("\nOUVERTURE DU PONT : BARRAGES BAISSÉS");
+		//notifyAll();
+		Thread.currentThread().sleep(3000);
+
+		etat = EtatPont.OUVERT;
+		
+		//System.out.println("PONT OUVERT. NAVIRES, AVANCEZ !\n");
+		notifyAll();
+	}
+
+	/**
+	 * Notifie qu'un bateau est passé
+	 * @throws InterruptedException 
+	 *
+	 */
+	public synchronized void signalerBateauPasse() throws InterruptedException {
+		notifyAll();
+		if (fileBateaux.isEmpty()) {
+			fermerPont();
+		}
+	}
+	
+	private synchronized void fermerPont() throws InterruptedException {
+		this.etat = EtatPont.FERMETURE;
+		Thread.currentThread().sleep(3000);
+		this.etat = EtatPont.FERME;
+		this.tempsDerniereFermeture = LocalTime.now().toSecondOfDay();
+		this.demandeDePassage = false;
+	}
+
+	
+
 }

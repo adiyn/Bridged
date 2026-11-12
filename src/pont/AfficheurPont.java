@@ -12,7 +12,8 @@ public class AfficheurPont {
 	
 	public void draw(TypeVehicule[] vNormale, TypeVehicule[] vReverse) {
 		//clear le terminal
-		System.out.print("\\033[2J");
+		System.out.print("\033[H\033[2J");
+		System.out.flush();
 		
 		//pas afficher tout en haut quand même
 		System.out.print("\n\n\n");
@@ -42,6 +43,7 @@ public class AfficheurPont {
 		} System.out.print("\n");
 
 		System.out.print("\n\n\n");
+		
 		
 		System.out.flush();
 	}
