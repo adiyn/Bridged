@@ -14,8 +14,9 @@ public class Bateau extends Thread {
     
 	public void run() {
 		pont.seRanger(id);
+		
 		try {
-			pont.demanderPassageBateaux(id);
+			pont.demanderPassageBateaux(sens);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}

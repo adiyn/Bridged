@@ -3,8 +3,7 @@ package pont;
 import java.time.LocalTime;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.concurrent.CancellationException;
 
 import vehicules.*;
 
@@ -40,7 +39,7 @@ public class PontMonitor {
 	private boolean demandeDePassage = false;
 
 	// timers pour le pont
-	private long tempsDerniereFermeture = 0;
+	private long tempsDerniereFermeture = LocalTime.now().toSecondOfDay();;
 	private final long DELAI_MIN_REOUVERTURE_MS;
 
 	private AfficheurPont afficheur;
@@ -62,12 +61,12 @@ public class PontMonitor {
 		}
 
 		this.DELAI_MIN_REOUVERTURE_MS = delaiReouvertureMs;
-		this.tempsDerniereFermeture = System.currentTimeMillis();
 		
 		System.out.println("pont créé.");
 		
 		this.afficheur = new AfficheurPont(nbSegments);
 		afficheur.draw(voieNormale, voieReverse);
+		//afficheur.drawBateau(false);
 		
 	}
 
@@ -248,10 +247,10 @@ public class PontMonitor {
 	/**
 	 * Met un bateau en attente tant que le pont n'est pas ouvert ou que son tour n'est pas venu
 	 *
-	 * @param bateauId identifiant du bateau en attente
+	 * @param sens true pour nord-> sud, false pour l'inverse
 	 * @throws InterruptedException si l'attente est interrompue
 	 */
-	public synchronized void demanderPassageBateaux(long bateauId) throws InterruptedException {
+	public synchronized void demanderPassageBateaux(boolean sens) throws InterruptedException {
 		if (!this.demandeDePassage) {
 			this.demandeDePassage = true;
 			
@@ -271,12 +270,7 @@ public class PontMonitor {
 		fileBateaux.poll();
 		
 		//affichage prenant du temps
-		System.out.println("Bateau " + bateauId + " traverse....");
-		System.out.flush();
-		
-		Thread.sleep(5000);
-		System.out.println("Bateau " + bateauId + " a traversé!");
-		
+		afficheur.drawBateau(sens);
 		traverseeBateauEnCours = false;
 		
 		signalerBateauPasse();
@@ -289,8 +283,9 @@ public class PontMonitor {
 	 * @throws InterruptedException si l'attente d'évacuation ou de franchissement est interrompue
 	 */
 	private synchronized void ouvrirPont() throws InterruptedException {
-		while (LocalTime.now().toSecondOfDay() < this.tempsDerniereFermeture + 60) {
+		while (LocalTime.now().toSecondOfDay() < this.tempsDerniereFermeture + DELAI_MIN_REOUVERTURE_MS) {
 			wait();
+			System.out.println("wait for an hour to pass");
 		}
 		
 		this.entreeNormaleOuverte = false;
@@ -298,14 +293,15 @@ public class PontMonitor {
 		
 		while (this.vehiculesSurNormal + this.vehiculesSurReverse != 0) {
 			wait();
+			System.out.println("wait for cars");
 		}
 		
 		this.etat = EtatPont.OUVERTURE;
 		
 		//System.out.println("\nOUVERTURE DU PONT : BARRAGES BAISSÉS");
 		//notifyAll();
-		Thread.currentThread().sleep(3000);
-
+		afficheur.drawOuverture();
+		
 		etat = EtatPont.OUVERT;
 		
 		//System.out.println("PONT OUVERT. NAVIRES, AVANCEZ !\n");
@@ -319,6 +315,7 @@ public class PontMonitor {
 	 */
 	public synchronized void signalerBateauPasse() throws InterruptedException {
 		notifyAll();
+		System.out.println("bateau passé");
 		if (fileBateaux.isEmpty()) {
 			fermerPont();
 		}
@@ -326,10 +323,15 @@ public class PontMonitor {
 	
 	private synchronized void fermerPont() throws InterruptedException {
 		this.etat = EtatPont.FERMETURE;
-		Thread.currentThread().sleep(3000);
+		
+		afficheur.drawFermeture();
+		
 		this.etat = EtatPont.FERME;
 		this.tempsDerniereFermeture = LocalTime.now().toSecondOfDay();
 		this.demandeDePassage = false;
+		
+		this.entreeNormaleOuverte = true;
+		this.entreeReverseOuverte = true;
 	}
 
 	
