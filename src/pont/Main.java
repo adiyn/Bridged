@@ -11,7 +11,10 @@ public class Main {
 		
 		Vehicule voiture1 = new Vehicule(pont, TypeVehicule.VOITURE, true, "test");
 		Vehicule voiture2 = new Vehicule(pont, TypeVehicule.VOITURE, true, "test");
-		Vehicule voiture3 = new Vehicule(pont, TypeVehicule.VOITURE, true, "test");
+		
+		Vehicule camion1 = new Vehicule(pont, TypeVehicule.CAMION, true, "test");
+		Vehicule camion2 = new Vehicule(pont, TypeVehicule.CAMION, false, "test");
+		
 		Vehicule voiture4 = new Vehicule(pont, TypeVehicule.VOITURE, true, "test");
 		Vehicule voiture5 = new Vehicule(pont, TypeVehicule.VOITURE, false, "rever");
 		Bateau bato = new Bateau(pont, true);
@@ -19,7 +22,7 @@ public class Main {
 		
 		voiture1.start();
 		voiture2.start();
-		voiture3.start();
+		camion1.start();
 		bato.start();
 		try {
 			Thread.sleep(6000);
@@ -28,7 +31,9 @@ public class Main {
 			e.printStackTrace();
 		}
 		voiture4.start();
+		
 		voiture5.start();
+		camion2.start();
 	}
 
 }

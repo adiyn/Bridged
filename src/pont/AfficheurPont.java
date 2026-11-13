@@ -299,6 +299,12 @@ public class AfficheurPont {
 
 	
 	public void drawFermeture() {
+		try {
+			Thread.sleep(2000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		
 		for (int i = 0; i < segments; i++) {
 			if (i >= segments/2 && i <= segments/2 +2) {
 				System.out.println("               ");
@@ -337,6 +343,12 @@ public class AfficheurPont {
 			} else {
 				System.out.println("     |   |     ");
 			}
+		}
+		
+		try {
+			Thread.sleep(2000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
 	}
 }

@@ -285,7 +285,7 @@ public class PontMonitor {
 	private synchronized void ouvrirPont() throws InterruptedException {
 		while (LocalTime.now().toSecondOfDay() < this.tempsDerniereFermeture + DELAI_MIN_REOUVERTURE_MS) {
 			wait();
-			System.out.println("wait for an hour to pass");
+			//System.out.println("wait for an hour to pass");
 		}
 		
 		this.entreeNormaleOuverte = false;
@@ -293,7 +293,7 @@ public class PontMonitor {
 		
 		while (this.vehiculesSurNormal + this.vehiculesSurReverse != 0) {
 			wait();
-			System.out.println("wait for cars");
+			//System.out.println("wait for cars");
 		}
 		
 		this.etat = EtatPont.OUVERTURE;
@@ -315,7 +315,7 @@ public class PontMonitor {
 	 */
 	public synchronized void signalerBateauPasse() throws InterruptedException {
 		notifyAll();
-		System.out.println("bateau passé");
+		//System.out.println("bateau passé");
 		if (fileBateaux.isEmpty()) {
 			fermerPont();
 		}
